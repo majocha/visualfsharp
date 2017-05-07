@@ -4,6 +4,7 @@ open System.ComponentModel.Composition
 open System
 open System.Windows
 open System.Windows.Controls
+open System.Windows.Documents
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.Classification
@@ -35,6 +36,15 @@ module private SessionHandling =
                   member __.Dispose() = () }
 
 
+type QuickInfoDocumentView(doc) =
+    inherit FlowDocumentScrollViewer(Document = doc, Width = 500.0, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden)
+    interface IInteractiveQuickInfoContent with
+        member this.IsMouseOverAggregated: bool = 
+            this.IsMouseOver
+        member this.KeepQuickInfoOpen: bool =
+            if isNull this.Selection then false
+            else not this.Selection.IsEmpty
+
 [<Export>]
 type internal QuickInfoViewProvider
     [<ImportingConstructor>]
@@ -65,7 +75,7 @@ type internal QuickInfoViewProvider
         |> typeMap.Value.GetClassificationType
         |> formatMap.Value.GetTextProperties
     
-    let formatText (navigation: QuickInfoNavigation) (content: seq<Layout.TaggedText>) : IDeferredQuickInfoContent =
+    let formatText (navigation: QuickInfoNavigation) (content: Layout.TaggedText seq) =
 
         let navigateAndDismiss range _ =
             navigation.NavigateTo range
@@ -78,43 +88,52 @@ type internal QuickInfoViewProvider
             t.Background <- Media.SolidColorBrush(Media.Color.FromRgb(color.R, color.G, color.B))
             t
 
-        let inlines = 
+        let p = Paragraph()
+
+        p.Inlines.AddRange(
             seq { 
                 for taggedText in content do
-                    let run = Documents.Run taggedText.Text
+                    let run = Run taggedText.Text
                     let inl =
                         match taggedText with
                         | :? Layout.NavigableTaggedText as nav when navigation.IsTargetValid nav.Range ->                        
-                            let h = Documents.Hyperlink(run, ToolTip = secondaryToolTip nav.Range)
+                            let h = Hyperlink(run, ToolTip = secondaryToolTip nav.Range)
                             h.Click.Add <| navigateAndDismiss nav.Range
-                            h :> Documents.Inline
+                            h :> Inline
                         | _ -> run :> _
                     DependencyObjectExtensions.SetTextProperties (inl, layoutTagToFormatting taggedText.Tag)
                     yield inl
-            }
+            })
+        p
 
-        let createTextLinks () =
-            let tb = TextBlock(TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.None)
-            DependencyObjectExtensions.SetDefaultTextProperties(tb, formatMap.Value)
-            tb.Inlines.AddRange inlines
-            if tb.Inlines.Count = 0 then tb.Visibility <- Visibility.Collapsed
-            tb.Resources.[typeof<Documents.Hyperlink>] <- getStyle()
-            tb :> FrameworkElement
+        //let createTextLinks () =
+        //    let tb = TextBlock(TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.None)
+        //    DependencyObjectExtensions.SetDefaultTextProperties(tb, formatMap.Value)
+        //    tb.Inlines.AddRange inlines
+        //    if tb.Inlines.Count = 0 then tb.Visibility <- Visibility.Collapsed
+        //    tb.Resources.
+        //    tb :> FrameworkElement
             
-        { new IDeferredQuickInfoContent with member x.Create() = createTextLinks() }
+        //{ new IDeferredQuickInfoContent with member x.Create() = createTextLinks() }
 
-    let empty = 
-        { new IDeferredQuickInfoContent with 
-            member x.Create() = TextBlock(Visibility = Visibility.Collapsed) :> FrameworkElement }
+    let content doc =
+        { new IDeferredQuickInfoContent with
+            member __.Create() =
+                let viewer = QuickInfoDocumentView(doc())
+                DependencyObjectExtensions.SetDefaultTextProperties(viewer, formatMap.Value)
+                viewer.Resources.[typeof<Hyperlink>] <- getStyle()
+                upcast viewer }
 
-    member __.ProvideContent(glyph: Glyph, description, documentation, typeParameterMap, usage, exceptions, navigation: QuickInfoNavigation) =
-        let navigableText x = formatText navigation x
-        let glyphContent = SymbolGlyphDeferredContent(glyph, glyphService)
-        QuickInfoDisplayDeferredContent
-            (glyphContent, null, 
-             mainDescription = navigableText description, 
-             documentation = navigableText documentation,
-             typeParameterMap = navigableText typeParameterMap, 
-             anonymousTypes = empty, 
-             usageText = navigableText usage, 
-             exceptionText = navigableText exceptions)
+    member __.ProvideContent(glyph: Glyph, description: Layout.TaggedText seq, documentation, typeParameterMap, usage, exceptions, navigation: QuickInfoNavigation) =
+        let _glyphContent = SymbolGlyphDeferredContent(glyph, glyphService)
+        let document() =
+            let doc = FlowDocument()
+            [ description
+              documentation
+              typeParameterMap
+              usage
+              exceptions ]
+            |> Seq.filter (Seq.isEmpty >> not)
+            |> Seq.iter (formatText navigation >> doc.Blocks.Add)
+            doc
+        content document

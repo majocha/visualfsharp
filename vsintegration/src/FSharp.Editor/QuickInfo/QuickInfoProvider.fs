@@ -245,7 +245,7 @@ type internal FSharpQuickInfoProvider
                               yield! targetDocumentation ]
                     let glyph = Tokenizer.GetGlyphForSymbol(targetTooltip.Symbol, targetTooltip.SymbolKind)
                     let navigation = QuickInfoNavigation(gotoDefinitionService, document, symbolUse.RangeAlternate)
-                    let content = viewProvider.ProvideContent(glyph, mainDescription, documentation=documentation, typeParameterMap=typeParameterMap, usage=usage, exceptions=exceptions, navigation=navigation)
+                    let content = viewProvider.ProvideContent(glyph, mainDescription, documentation, typeParameterMap, usage, exceptions, navigation)
                     return QuickInfoItem (targetTooltip.Span, content)
             }   |> Async.map Option.toObj
                 |> RoslynHelpers.StartAsyncAsTask cancellationToken 
