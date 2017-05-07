@@ -88,52 +88,44 @@ type internal QuickInfoViewProvider
             t.Background <- Media.SolidColorBrush(Media.Color.FromRgb(color.R, color.G, color.B))
             t
 
-        let p = Paragraph()
+        seq { 
+            for taggedText in content do
+                let run = Run taggedText.Text
+                let inl =
+                    match taggedText with
+                    | :? Layout.NavigableTaggedText as nav when navigation.IsTargetValid nav.Range ->                        
+                        let h = Hyperlink(run, ToolTip = secondaryToolTip nav.Range)
+                        h.Click.Add <| navigateAndDismiss nav.Range
+                        h :> Inline
+                    | _ -> run :> _
+                DependencyObjectExtensions.SetTextProperties (inl, layoutTagToFormatting taggedText.Tag)
+                yield inl
+        }
 
-        p.Inlines.AddRange(
-            seq { 
-                for taggedText in content do
-                    let run = Run taggedText.Text
-                    let inl =
-                        match taggedText with
-                        | :? Layout.NavigableTaggedText as nav when navigation.IsTargetValid nav.Range ->                        
-                            let h = Hyperlink(run, ToolTip = secondaryToolTip nav.Range)
-                            h.Click.Add <| navigateAndDismiss nav.Range
-                            h :> Inline
-                        | _ -> run :> _
-                    DependencyObjectExtensions.SetTextProperties (inl, layoutTagToFormatting taggedText.Tag)
-                    yield inl
-            })
-        p
-
-        //let createTextLinks () =
-        //    let tb = TextBlock(TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.None)
-        //    DependencyObjectExtensions.SetDefaultTextProperties(tb, formatMap.Value)
-        //    tb.Inlines.AddRange inlines
-        //    if tb.Inlines.Count = 0 then tb.Visibility <- Visibility.Collapsed
-        //    tb.Resources.
-        //    tb :> FrameworkElement
-            
-        //{ new IDeferredQuickInfoContent with member x.Create() = createTextLinks() }
-
-    let content doc =
+    let content (doc: Lazy<FlowDocument>) =
         { new IDeferredQuickInfoContent with
             member __.Create() =
-                let viewer = QuickInfoDocumentView(doc())
+                let viewer = QuickInfoDocumentView(doc.Value)
                 DependencyObjectExtensions.SetDefaultTextProperties(viewer, formatMap.Value)
                 viewer.Resources.[typeof<Hyperlink>] <- getStyle()
                 upcast viewer }
 
     member __.ProvideContent(glyph: Glyph, description: Layout.TaggedText seq, documentation, typeParameterMap, usage, exceptions, navigation: QuickInfoNavigation) =
         let _glyphContent = SymbolGlyphDeferredContent(glyph, glyphService)
-        let document() =
-            let doc = FlowDocument()
-            [ description
-              documentation
-              typeParameterMap
-              usage
-              exceptions ]
-            |> Seq.filter (Seq.isEmpty >> not)
-            |> Seq.iter (formatText navigation >> doc.Blocks.Add)
-            doc
+        let parts =  
+          [ description
+            documentation
+            typeParameterMap
+            usage
+            exceptions ]
+        let document  =
+            lazy 
+                let par = Paragraph()
+                let doc = FlowDocument(par, PagePadding = Thickness(0.0) )
+                for p in parts do       
+                    if not (Seq.isEmpty p) then
+                        if p <> Seq.head parts then par.Inlines.Add(Documents.LineBreak())
+                        par.Inlines.AddRange(formatText navigation p)
+                doc
+            
         content document
