@@ -57,13 +57,17 @@ type internal QuickInfoViewProvider
         downcast styles.[key]
 
     let formatMap = lazy typeMap.Value.ClassificationFormatMapService.GetClassificationFormatMap "tooltip"
+    let editorMap = lazy typeMap.Value.ClassificationFormatMapService.GetClassificationFormatMap "text"
 
     let layoutTagToFormatting (layoutTag: LayoutTag) =
-        layoutTag
-        |> RoslynHelpers.roslynTag
-        |> ClassificationTags.GetClassificationTypeName
-        |> typeMap.Value.GetClassificationType
-        |> formatMap.Value.GetTextProperties
+        let format = 
+            layoutTag
+            |> RoslynHelpers.roslynTag
+            |> ClassificationTags.GetClassificationTypeName
+            |> typeMap.Value.GetClassificationType
+            |> formatMap.Value.GetTextProperties
+        if layoutTag = LayoutTag.Text then format
+        else format.SetTypeface(editorMap.Value.DefaultTextProperties.Typeface)
     
     let formatText (navigation: QuickInfoNavigation) (content: seq<Layout.TaggedText>) : IDeferredQuickInfoContent =
 
