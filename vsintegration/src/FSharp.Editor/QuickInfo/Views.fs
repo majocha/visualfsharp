@@ -67,7 +67,9 @@ type internal QuickInfoViewProvider
             |> typeMap.Value.GetClassificationType
             |> formatMap.Value.GetTextProperties
         if layoutTag = LayoutTag.Text then format
-        else format.SetTypeface(editorMap.Value.DefaultTextProperties.Typeface)
+        else
+            let editorDefaults = editorMap.Value.DefaultTextProperties
+            format.SetTypeface(editorDefaults.Typeface).SetFontRenderingEmSize(editorDefaults.FontRenderingEmSize)
     
     let formatText (navigation: QuickInfoNavigation) (content: seq<Layout.TaggedText>) : IDeferredQuickInfoContent =
 
