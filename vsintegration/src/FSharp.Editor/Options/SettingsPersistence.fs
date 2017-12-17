@@ -3,15 +3,16 @@
 open System
 open System.Collections.Concurrent
 open System.ComponentModel.Composition
-open System.Reflection
 open System.Runtime.InteropServices
 
 open Microsoft.VisualStudio.Settings
 open Microsoft.VisualStudio.Shell
+open Microsoft.VisualStudio.ComponentModelHost
 
 open Newtonsoft.Json
 
 module internal SettingsPersistence =
+    open Newtonsoft.Json.Linq
 
     // Each group of settings is a value of some named type, for example 'IntelliSenseOptions', 'QuickInfoOptions'
     // We cache exactly one instance of each, treating them as immutable.
@@ -26,11 +27,36 @@ module internal SettingsPersistence =
     let setSettings( settings: 't) =
         cache.[typeof<'t>] <- settings
 
-    [<Guid(Guids.svsSettingsPersistenceManagerIdString)>]
-    type SVsSettingsPersistenceManager = class end
+    let key (t: Type) = t.Namespace + "_" + t.Name
+
+    let toJson() =
+        cache
+        |> Seq.map (fun kv -> key kv.Key, kv.Value)
+        |> Map.ofSeq
+        |> JsonConvert.SerializeObject
+
+    let fromJson v = 
+        try
+            let jtoken = JToken.Parse v
+            for k in cache.Keys do
+                try
+                    let mutable setting = cache.[k]
+                    let partial = jtoken.[key k].ToString()
+                    JsonConvert.PopulateObject(partial, setting)
+                    cache.[k] <- setting
+                with _ -> ()
+        with _ -> () // no valid json
 
     // marker interface for default settings export
     type ISettings = interface end
+
+    [<ComVisible(true)>]
+    type AutomationObject(serviceProvider: IComponentModel) =
+        do serviceProvider.GetService<ISettings>() |> ignore
+        member __.FSharpSettings with get() = toJson() and set v = fromJson v
+
+    [<Guid(Guids.svsSettingsPersistenceManagerIdString)>]
+    type SVsSettingsPersistenceManager = class end
 
     [<Export>]
     type SettingsStore
@@ -64,10 +90,10 @@ module internal SettingsPersistence =
                 (getSettings() : 't) |> tryPopulate |> setSettings
                 System.Threading.Tasks.Task.CompletedTask )
 
-        member this.LoadSettings() : 't =
+        member __.LoadSettings() : 't =
             getSettings() |> tryPopulate
             
-        member this.SaveSettings(settings: 't) =
+        member __.SaveSettings(settings: 't) =
             save settings 
 
         member __.RegisterDefault(defaultValue: 't) =

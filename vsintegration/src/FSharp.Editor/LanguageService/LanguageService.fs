@@ -273,10 +273,11 @@ type internal FSharpCheckerWorkspaceServiceFactory
 
 type
     [<Guid(FSharpConstants.packageGuidString)>]
-    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.IntelliSenseOptionPage>, "F#", null, "IntelliSense", "6008")>]
-    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.QuickInfoOptionPage>, "F#", null, "QuickInfo", "6009")>]
-    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.CodeFixesOptionPage>, "F#", null, "Code Fixes", "6010")>]
-    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.LanguageServicePerformanceOptionPage>, "F#", null, "Performance", "6011")>]
+    [<ProvideAutomationObject("FSharp-Specific")>]
+    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.IntelliSenseOptionPage>, "F#", "", "IntelliSense", "6008")>]
+    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.QuickInfoOptionPage>, "F#", "", "QuickInfo", "6009")>]
+    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.CodeFixesOptionPage>, "F#", "", "Code Fixes", "6010")>]
+    [<ProvideLanguageEditorOptionPage(typeof<OptionsUI.LanguageServicePerformanceOptionPage>, "F#", "", "Performance", "6011")>]
     [<ProvideLanguageService(languageService = typeof<FSharpLanguageService>,
                              strLanguageName = FSharpConstants.FSharpLanguageName,
                              languageResourceID = 100,
@@ -306,6 +307,11 @@ type
     override this.CreateLanguageService() = FSharpLanguageService(this)
     override this.CreateEditorFactories() = Seq.empty<IVsEditorFactory>
     override this.RegisterMiscellaneousFilesWorkspaceInformation(_) = ()
+    override this.GetAutomationObject(name) =
+        match name with
+        | "FSharp-Specific" ->
+            upcast SettingsPersistence.AutomationObject(this.ComponentModel)
+        | _ -> base.GetAutomationObject(name)     
 
 type
     [<Guid(FSharpConstants.languageServiceGuidString)>]
