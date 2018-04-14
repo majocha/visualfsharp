@@ -34,8 +34,9 @@ type internal FSharpCompletionProvider
     inherit CompletionProvider()
 
     static let userOpName = "CompletionProvider"
-    // Save the backing data in a memory cache held in a sliding window
-    static let declarationItemsCache = new MemoryCache("FSharp.Editor." + userOpName)
+    // map completion items to their declarations for the duration of the session
+    // so we can retrieve descriptions when requested
+    static let declarationItemsMap = System.Collections.Concurrent.ConcurrentDictionary()
     static let [<Literal>] NameInCodePropName = "NameInCode"
     static let [<Literal>] FullNamePropName = "FullName"
     static let [<Literal>] IsExtensionMemberPropName = "IsExtensionMember"
@@ -140,6 +141,8 @@ type internal FSharpCompletionProvider
 
             let maxHints = if mruItems.Values.Count = 0 then 0 else Seq.max mruItems.Values
 
+            declarationItemsMap.Clear()
+
             sortedDeclItems |> Array.iteri (fun number declarationItem ->
                 let glyph = Tokenizer.FSharpGlyphToRoslynGlyph (declarationItem.Glyph, declarationItem.Accessibility)
                 let name =
@@ -184,10 +187,8 @@ type internal FSharpCompletionProvider
 
                 let completionItem = completionItem.WithSortText(sortText)
 
-                let key = completionItem.DisplayText
-                let cacheItem = CacheItem(key, declarationItem)
-                let policy = CacheItemPolicy(SlidingExpiration=DefaultTuning.PerDocumentSavedDataSlidingWindow)
-                declarationItemsCache.Set(cacheItem, policy)
+                declarationItemsMap.[completionItem.DisplayText] <- declarationItem
+
                 results.Add(completionItem))
 
             if results.Count > 0 && not declarations.IsForType && not declarations.IsError && List.isEmpty partialName.QualifyingIdents then
@@ -234,8 +235,8 @@ type internal FSharpCompletionProvider
         
     override this.GetDescriptionAsync(_: Document, completionItem: Completion.CompletionItem, cancellationToken: CancellationToken): Task<CompletionDescription> =
         async {
-            match declarationItemsCache.Get(completionItem.DisplayText) with
-            | :? FSharpDeclarationListItem as declarationItem -> 
+            match declarationItemsMap.TryGetValue completionItem.DisplayText with
+            | true, declarationItem -> 
                 let! description = declarationItem.StructuredDescriptionTextAsync
                 let documentation = List()
                 let collector = RoslynHelpers.CollectTaggedText documentation
@@ -248,6 +249,8 @@ type internal FSharpCompletionProvider
 
     override this.GetChangeAsync(document, item, _, cancellationToken) : Task<CompletionChange> =
         async {
+            declarationItemsMap.Clear()
+
             let fullName =
                 match item.Properties.TryGetValue FullNamePropName with
                 | true, x -> Some x
